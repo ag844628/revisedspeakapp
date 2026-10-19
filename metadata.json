@@ -1,0 +1,6 @@
+{
+  "name": "Companion - Voice Assistant & Profile Manager",
+  "description": "Marathi voice companion and assistant profile manager with voice speech synthesis, custom audio recordings, and background listening service.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
