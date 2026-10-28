@@ -85,11 +85,28 @@ export default function App() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // Save profiles to localStorage
   useEffect(() => {
     localStorage.setItem('newspeakapp_profiles', JSON.stringify(profiles));
   }, [profiles]);
+
+  // Pre-load SpeechSynthesis voices
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+      const onVoicesChanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+      window.speechSynthesis.onvoiceschanged = onVoicesChanged;
+      return () => {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.onvoiceschanged = null;
+        }
+      };
+    }
+  }, []);
 
   // PWA install prompt state
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -203,8 +220,15 @@ export default function App() {
       utterance.rate = 1.0;
     }
 
-    utterance.onend = () => onEnd();
-    utterance.onerror = () => onEnd();
+    activeUtteranceRef.current = utterance;
+    utterance.onend = () => {
+      activeUtteranceRef.current = null;
+      onEnd();
+    };
+    utterance.onerror = () => {
+      activeUtteranceRef.current = null;
+      onEnd();
+    };
 
     window.speechSynthesis.speak(utterance);
   };
@@ -330,19 +354,26 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file || selectedProfileForAudio === null) return;
 
-    const url = URL.createObjectURL(file);
-    setProfiles(prev => prev.map(p => {
-      if (p.id === selectedProfileForAudio) {
-        return { ...p, audioUri: url, audioName: file.name };
-      }
-      return p;
-    }));
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setProfiles(prev => prev.map(p => {
+        if (p.id === selectedProfileForAudio) {
+          return { ...p, audioUri: dataUrl, audioName: file.name };
+        }
+        return p;
+      }));
 
-    showToast('आवाज यशस्वीरीत्या अपलोड झाला!');
-    setSelectedProfileForAudio(null);
-    if (audioInputRef.current) {
-      audioInputRef.current.value = '';
-    }
+      showToast('आवाज यशस्वीरीत्या अपलोड झाला!');
+      setSelectedProfileForAudio(null);
+      if (audioInputRef.current) {
+        audioInputRef.current.value = '';
+      }
+    };
+    reader.onerror = () => {
+      showToast('ऑडिओ फाईल वाचताना अडचण आली.');
+    };
+    reader.readAsDataURL(file);
   };
 
   // Start Voice Recording
@@ -361,17 +392,20 @@ export default function App() {
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(recordedChunksRef.current, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-
-        if (selectedProfileForAudio !== null) {
-          setProfiles(prev => prev.map(p => {
-            if (p.id === selectedProfileForAudio) {
-              return { ...p, audioUri: audioUrl, audioName: 'कस्टम रेकॉर्डिंग.webm' };
-            }
-            return p;
-          }));
-          showToast('आवाज यशस्वीरीत्या अपलोड झाला!');
-        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const audioUrl = reader.result as string;
+          if (selectedProfileForAudio !== null) {
+            setProfiles(prev => prev.map(p => {
+              if (p.id === selectedProfileForAudio) {
+                return { ...p, audioUri: audioUrl, audioName: 'कस्टम रेकॉर्डिंग.webm' };
+              }
+              return p;
+            }));
+            showToast('आवाज यशस्वीरीत्या सेव्ह झाला!');
+          }
+        };
+        reader.readAsDataURL(audioBlob);
 
         stream.getTracks().forEach(track => track.stop());
         setIsRecording(false);
